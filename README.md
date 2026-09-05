@@ -70,16 +70,16 @@ Starten bij inloggen zet je aan via het menubalkicoon of het instellingenvenster
 instellingenvenster is ook zonder menubalkicoon te bereiken: met ⌃⌥, of door de app nog eens te
 starten (Alfred, Spotlight, dubbelklik).
 
-### Menubalkicoon niet te zien?
+### Zonder menubalkicoon
 
-Bij elke start schrijft Frameworker één regel naar `~/Library/Logs/Frameworker.log` met de positie
-die de menubalk aan het icoon gaf. Staat daar `placed false`, dan weigert macOS het item te tonen.
-Dat kan op macOS 26 gebeuren voor alle apps van derden tegelijk, bijvoorbeeld na een wijziging
-in de schermindeling; uit- en inloggen zet de menubalk terug. Een overzicht van alle apps met een
-menubalk-item vraag je op met:
+Op macOS 26 kun je menubalkiconen van apps per app uitzetten (Systeeminstellingen, Menubalk).
+Frameworker heeft het icoon niet nodig: de sneltoetsen werken los ervan, en het instellingenvenster
+open je met ⌃⌥, of door de app nog eens te starten. Bij elke start schrijft Frameworker één regel
+naar `~/Library/Logs/Frameworker.log` met de positie die de menubalk aan het icoon gaf; `placed
+false` betekent dat het icoon verborgen is. Een overzicht van alle apps met een menubalk-item:
 
 ```bash
-swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(Notification.Name("nl.zawin.frameworker.diagnose"), object: nil, userInfo: nil, deliverImmediately: true)' && sleep 1 && tail -20 ~/Library/Logs/Frameworker.log
+swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(Notification.Name("nl.zawin.frameworker.diagnose"), object: nil, userInfo: nil, deliverImmediately: true)' && sleep 2 && tail -12 ~/Library/Logs/Frameworker.log
 ```
 
 ## Zuinig
