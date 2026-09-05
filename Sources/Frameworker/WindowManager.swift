@@ -40,12 +40,39 @@ final class WindowManager {
             let target = screens[(index + offset) % screens.count]
             remember(frame, for: key)
             set(frame: Layout.translated(frame, from: visible, to: target), for: window)
+        case .openSettings:
+            return
         default:
-            guard let target = Layout.frame(for: action, window: frame, visible: visible,
+            let step = Layout.nextStep(for: action, window: frame, visible: visible, customSize: Settings.shared.customSize)
+            guard let target = Layout.frame(for: step, window: frame, visible: visible,
                                             customSize: Settings.shared.customSize) else { return }
             remember(frame, for: key)
             set(frame: target, for: window)
         }
+    }
+
+    // MARK: Diagnostics
+
+    /// Where every running app's status items ended up, as seen through Accessibility. A frame at the top
+    /// of a screen means the menu bar placed the item; anything else means it is hidden.
+    func menuBarSurvey() -> String {
+        guard WindowManager.isTrusted else { return "no accessibility trust" }
+        var lines = ["screens: " + NSScreen.screens.map { NSStringFromRect($0.frame) }.joined(separator: " ")]
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy != .prohibited {
+            var value: CFTypeRef?
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            guard AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &value) == .success,
+                  let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { continue }
+            var childrenValue: CFTypeRef?
+            AXUIElementCopyAttributeValue(unsafeBitCast(value, to: AXUIElement.self), kAXChildrenAttribute as CFString, &childrenValue)
+            let frames = ((childrenValue as? [AnyObject]) ?? []).compactMap { object -> String? in
+                guard CFGetTypeID(object as CFTypeRef) == AXUIElementGetTypeID() else { return nil }
+                return frame(of: unsafeBitCast(object, to: AXUIElement.self)).map { NSStringFromRect($0) }
+            }
+            guard !frames.isEmpty else { continue }
+            lines.append("\(app.localizedName ?? "?") [\(app.bundleIdentifier ?? "-")]: \(frames.joined(separator: " "))")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Target window

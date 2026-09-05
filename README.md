@@ -23,6 +23,13 @@ spiergeheugen meeverhuist.
 | Kleiner | - | | Herstellen | ⌫ |
 | Groter | = | | Naar volgend scherm | ⌃⌥⌘ → |
 | Bijna maximaliseren | (geen) | | Naar vorig scherm | ⌃⌥⌘ ← |
+| Instellingen openen | , | | | |
+
+Nog een keer dezelfde toets drukken schakelt door. Eerste derde loopt naar rechts (eerste,
+middelste, laatste derde), laatste derde loopt naar links, tweederde springt naar de andere kant,
+en een linker- of rechterhelft wordt bij herhalen tweederde en daarna een derde aan dezelfde kant.
+Dat gaat op basis van waar het venster nu staat, dus een handmatig verschoven venster begint
+gewoon weer bij de eerste stap.
 
 Elke combinatie is aan te passen in het instellingenvenster (menubalkicoon, Instellingen…):
 klik op een veld en druk de nieuwe combinatie in. Escape annuleert, Backspace maakt een veld
@@ -43,7 +50,10 @@ Xcode zelf is niet nodig.
 ./build.sh --install
 ```
 
-Dat bouwt de app met SwiftPM, zet hem in `~/Applications/Frameworker.app` en start hem. Bij de
+Dat bouwt de app met SwiftPM, zet hem in `~/Applications/Frameworker.app` en start hem. Zonder
+`--install` blijft de bundel in de verborgen map `.build/`, zodat Spotlight en Alfred maar één
+Frameworker kennen. Start je toch een tweede exemplaar, dan geeft dat het stokje door aan het
+draaiende exemplaar en opent daar het instellingenvenster. Bij de
 eerste start vraagt macOS om toegang tot Toegankelijkheid; zet Frameworker aan onder
 Systeeminstellingen, Privacy en beveiliging, Toegankelijkheid. Zonder die toestemming kan geen
 enkele app vensters van andere apps verplaatsen.
@@ -56,7 +66,21 @@ dan helpt dit:
 tccutil reset Accessibility nl.zawin.frameworker
 ```
 
-Starten bij inloggen zet je aan via het menubalkicoon of het instellingenvenster.
+Starten bij inloggen zet je aan via het menubalkicoon of het instellingenvenster. Het
+instellingenvenster is ook zonder menubalkicoon te bereiken: met ⌃⌥, of door de app nog eens te
+starten (Alfred, Spotlight, dubbelklik).
+
+### Menubalkicoon niet te zien?
+
+Bij elke start schrijft Frameworker één regel naar `~/Library/Logs/Frameworker.log` met de positie
+die de menubalk aan het icoon gaf. Staat daar `placed false`, dan weigert macOS het item te tonen.
+Dat kan op macOS 26 gebeuren voor alle apps van derden tegelijk, bijvoorbeeld na een wijziging
+in de schermindeling; uit- en inloggen zet de menubalk terug. Een overzicht van alle apps met een
+menubalk-item vraag je op met:
+
+```bash
+swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(Notification.Name("nl.zawin.frameworker.diagnose"), object: nil, userInfo: nil, deliverImmediately: true)' && sleep 1 && tail -20 ~/Library/Logs/Frameworker.log
+```
 
 ## Zuinig
 
@@ -79,6 +103,7 @@ Starten bij inloggen zet je aan via het menubalkicoon of het instellingenvenster
 | `Sources/Frameworker/AppDelegate.swift` | Menubalkicoon en menu |
 | `scripts/make-icon.swift` | Tekent het app-icoon en pakt het in als .icns |
 | `build.sh` | Bouwt, bundelt, signeert en installeert |
+| `Frameworker --snapshot pad.png` | Ontwikkelhulp: opent het instellingenvenster, schrijft er een PNG van en stopt |
 | `test.sh` | Draait de tests, ook met alleen de Command Line Tools |
 
 Tests draaien met `./test.sh` (een kale `swift test` vindt Testing.framework niet zonder Xcode).

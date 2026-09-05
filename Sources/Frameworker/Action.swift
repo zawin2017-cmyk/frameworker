@@ -10,6 +10,7 @@ enum WindowAction: String, CaseIterable {
     case maximize, almostMaximize, center, customSize
     case smaller, larger
     case restore, nextDisplay, previousDisplay
+    case openSettings
 
     enum Group: CaseIterable {
         case halves, quarters, thirds, size, other
@@ -31,7 +32,7 @@ enum WindowAction: String, CaseIterable {
         case .topLeft, .topRight, .bottomLeft, .bottomRight: return .quarters
         case .firstThird, .centerThird, .lastThird, .firstTwoThirds, .lastTwoThirds: return .thirds
         case .maximize, .almostMaximize, .center, .customSize, .smaller, .larger: return .size
-        case .restore, .nextDisplay, .previousDisplay: return .other
+        case .restore, .nextDisplay, .previousDisplay, .openSettings: return .other
         }
     }
 
@@ -60,6 +61,7 @@ enum WindowAction: String, CaseIterable {
         case .restore: return "Herstellen"
         case .nextDisplay: return "Naar volgend scherm"
         case .previousDisplay: return "Naar vorig scherm"
+        case .openSettings: return "Instellingen openen"
         }
     }
 
@@ -89,6 +91,7 @@ enum WindowAction: String, CaseIterable {
         case .restore: return Shortcut(keyCode: kVK_Delete, modifiers: base)
         case .nextDisplay: return Shortcut(keyCode: kVK_RightArrow, modifiers: Shortcut.controlOptionCommand)
         case .previousDisplay: return Shortcut(keyCode: kVK_LeftArrow, modifiers: Shortcut.controlOptionCommand)
+        case .openSettings: return Shortcut(keyCode: kVK_ANSI_Comma, modifiers: base)
         }
     }
 

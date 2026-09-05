@@ -1,7 +1,7 @@
 import AppKit
 
-/// Dark, translucent settings window: shortcut recorders per group, the fixed custom size, and
-/// launch at login. Built in plain AppKit so it costs nothing while it is closed.
+/// Dark, translucent settings window: a fixed header, then glass cards with the shortcut recorders per
+/// group, the fixed custom size, and launch at login. Plain AppKit, so it costs nothing while closed.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     var onRecordingChange: ((Bool) -> Void)?
     var onClose: (() -> Void)?
@@ -15,11 +15,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let heightField = NSTextField()
     private let loginCheckbox = NSButton(checkboxWithTitle: "Start Frameworker automatisch bij inloggen",
                                          target: nil, action: nil)
+    private let hintLabel = NSTextField(labelWithString: "")
+    private var hintTimer: DispatchWorkItem?
     private var accessibilityCard: NSView?
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
-                              styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 720),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.title = "Frameworker"
         window.titlebarAppearsTransparent = true
@@ -29,6 +31,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 560, height: 480)
+        window.autorecalculatesKeyViewLoop = false // no pill gets focus until it is clicked
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -41,6 +45,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         refresh()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        window?.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -52,23 +57,42 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func buildContent(in window: NSWindow) {
         guard let content = window.contentView else { return }
 
+        // Translucent dark base that lets the desktop through, with a moody gradient on top so the glass
+        // cards have something to refract even when the window sits over a plain dark app.
         let backdrop = NSVisualEffectView()
         backdrop.material = .hudWindow
         backdrop.blendingMode = .behindWindow
         backdrop.state = .active
         pin(backdrop, to: content)
+        pin(AuroraView(), to: content)
 
-        let tint = NSView()
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor(calibratedRed: 0.04, green: 0.05, blue: 0.08, alpha: 0.45).cgColor
-        pin(tint, to: content)
+        let header = header()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(header)
+
+        let separator = hairline()
+        content.addSubview(separator)
 
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
-        pin(scroll, to: content)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(scroll)
+
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: content.topAnchor, constant: 40),
+            header.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
+            header.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
+            separator.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 18),
+            separator.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: separator.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
 
         let document = FlippedView()
         document.translatesAutoresizingMaskIntoConstraints = false
@@ -85,7 +109,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 14
-        stack.edgeInsets = NSEdgeInsets(top: 48, left: 24, bottom: 24, right: 24)
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 24, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -95,16 +119,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             stack.bottomAnchor.constraint(equalTo: document.bottomAnchor),
         ])
 
-        stack.addArrangedSubview(header())
         let notice = accessibilityNotice()
         accessibilityCard = notice
-        stack.addArrangedSubview(notice)
+        Self.addFullWidth(notice, to: stack)
         for group in WindowAction.Group.allCases {
-            stack.addArrangedSubview(GlassCard(title: group.title, content: shortcutGrid(for: group)))
+            Self.addFullWidth(GlassCard(title: group.title, content: shortcutRows(for: group)), to: stack)
         }
-        stack.addArrangedSubview(GlassCard(title: "Vaste maat", content: sizeRow()))
-        stack.addArrangedSubview(GlassCard(title: "Algemeen", content: generalRows()))
-        stack.addArrangedSubview(footer())
+        Self.addFullWidth(GlassCard(title: "Vaste maat", content: sizeRow()), to: stack)
+        Self.addFullWidth(GlassCard(title: "Algemeen", content: generalRows()), to: stack)
+        Self.addFullWidth(footer(), to: stack)
+    }
+
+    /// NSStackView applies its `.width` alignment at priority 250 only, which loses against any view that
+    /// hugs its content (NSGlassEffectView does). Pinning both edges at required priority settles it.
+    private static func addFullWidth(_ view: NSView, to stack: NSStackView) {
+        stack.addArrangedSubview(view)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: stack.edgeInsets.left),
+            view.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -stack.edgeInsets.right),
+        ])
     }
 
     private func pin(_ view: NSView, to parent: NSView) {
@@ -118,26 +152,47 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         ])
     }
 
+    private func hairline() -> NSView {
+        let line = NSView()
+        line.wantsLayer = true
+        line.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        line.translatesAutoresizingMaskIntoConstraints = false
+        line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return line
+    }
+
     private func header() -> NSView {
         let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 30, weight: .medium))
-        icon.contentTintColor = .labelColor
-        let title = label("Frameworker", font: .systemFont(ofSize: 24, weight: .bold), color: .labelColor)
-        let subtitle = label("Klik op een veld en druk de nieuwe toetscombinatie in. Backspace maakt een veld leeg.",
+        icon.image = NSApp.applicationIconImage
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 60).isActive = true
+
+        let title = label("Frameworker", font: .systemFont(ofSize: 26, weight: .semibold), color: .labelColor)
+        let subtitle = label("Klik op een veld en druk de nieuwe toetscombinatie in. Escape annuleert, Backspace maakt leeg.",
                              font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 2
-        subtitle.preferredMaxLayoutWidth = 440
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let text = NSStackView(views: [title, subtitle])
+
+        hintLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        hintLabel.textColor = .systemYellow
+        hintLabel.lineBreakMode = .byWordWrapping
+        hintLabel.maximumNumberOfLines = 2
+        hintLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        hintLabel.isHidden = true
+
+        let text = NSStackView(views: [title, subtitle, hintLabel])
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 2
+        text.spacing = 3
+        text.setCustomSpacing(6, after: subtitle)
+
         let row = NSStackView(views: [icon, text])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 14
+        row.spacing = 16
         return row
     }
 
@@ -146,7 +201,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                          font: .systemFont(ofSize: 13), color: .labelColor)
         text.lineBreakMode = .byWordWrapping
         text.maximumNumberOfLines = 3
-        text.preferredMaxLayoutWidth = 300
         text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let button = NSButton(title: "Systeeminstellingen openen", target: self, action: #selector(openAccessibilitySettings))
         button.bezelStyle = .rounded
@@ -154,43 +208,70 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 12
-        return GlassCard(title: "Toegang nodig", content: row, tint: NSColor.systemOrange.withAlphaComponent(0.28))
+        return GlassCard(title: "Toegang nodig", content: row, tint: NSColor.systemOrange.withAlphaComponent(0.30))
     }
 
-    private func shortcutGrid(for group: WindowAction.Group) -> NSView {
-        let grid = NSGridView()
-        grid.rowSpacing = 8
-        grid.columnSpacing = 16
-        grid.yPlacement = .center
-        for action in WindowAction.allCases where action.group == group {
+    /// One row per action: the name on the left, the recorder pill flush right, hairlines in between.
+    private func shortcutRows(for group: WindowAction.Group) -> NSView {
+        let rows = NSStackView()
+        rows.orientation = .vertical
+        rows.alignment = .width
+        rows.spacing = 0
+        let actions = WindowAction.allCases.filter { $0.group == group }
+        for (index, action) in actions.enumerated() {
             let name = label(action.title, font: .systemFont(ofSize: 13), color: .labelColor)
+            name.setContentHuggingPriority(.defaultLow, for: .horizontal)
             let recorder = ShortcutRecorderView()
             recorder.onChange = { [weak self] shortcut in
                 guard let self else { return }
-                self.settings.setShortcut(shortcut, for: action)
+                let displaced = self.settings.setShortcut(shortcut, for: action)
                 self.refreshRecorders()
+                if let shortcut, !displaced.isEmpty {
+                    let names = displaced.map(\.title).joined(separator: ", ")
+                    self.showHint("\(shortcut.displayString) stond bij \(names) en is daar losgemaakt.")
+                }
             }
             recorder.onRecordingChange = { [weak self] recording in self?.onRecordingChange?(recording) }
             recorders[action] = recorder
-            grid.addRow(with: [name, recorder])
+
+            let row = NSStackView(views: [name, recorder])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.distribution = .fill
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            Self.addFullWidth(row, to: rows)
+            if index < actions.count - 1 { Self.addFullWidth(hairline(), to: rows) }
         }
-        grid.column(at: 0).width = 240
-        grid.column(at: 1).xPlacement = .leading
-        return grid
+        return rows
     }
 
     private func sizeRow() -> NSView {
         configureSizeField(widthField)
         configureSizeField(heightField)
         let name = label("Breedte en hoogte", font: .systemFont(ofSize: 13), color: .labelColor)
+        name.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let times = label("×", font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
-        let unit = label("px, gecentreerd op het scherm", font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
-        let row = NSStackView(views: [name, widthField, times, heightField, unit])
+        let unit = label("px", font: .systemFont(ofSize: 13), color: .secondaryLabelColor)
+        let fields = NSStackView(views: [widthField, times, heightField, unit])
+        fields.orientation = .horizontal
+        fields.alignment = .centerY
+        fields.spacing = 8
+        let row = NSStackView(views: [name, fields])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 8
-        row.setCustomSpacing(16, after: name)
-        return row
+        row.distribution = .fill
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        let note = label("Het venster wordt op deze maat gezet en gecentreerd op zijn scherm.",
+                         font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        let column = NSStackView()
+        column.orientation = .vertical
+        column.alignment = .width
+        column.spacing = 4
+        Self.addFullWidth(row, to: column)
+        Self.addFullWidth(note, to: column)
+        return column
     }
 
     private func configureSizeField(_ field: NSTextField) {
@@ -254,6 +335,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private func showHint(_ text: String) {
+        hintTimer?.cancel()
+        hintLabel.stringValue = text
+        hintLabel.isHidden = false
+        let hide = DispatchWorkItem { [weak self] in self?.hintLabel.isHidden = true }
+        hintTimer = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: hide)
+    }
+
     @objc private func sizeChanged() {
         let width = widthField.integerValue
         let height = heightField.integerValue
@@ -292,6 +382,57 @@ private final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
+/// Static, layer-only gradient: a deep navy base with two soft colour blooms. Nothing animates, so it is
+/// composited once and costs nothing afterwards.
+final class AuroraView: NSView {
+    private let base = CAGradientLayer()
+    private let indigo = CAGradientLayer()
+    private let teal = CAGradientLayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+
+        base.colors = [
+            NSColor(calibratedRed: 0.09, green: 0.10, blue: 0.19, alpha: 0.62).cgColor,
+            NSColor(calibratedRed: 0.03, green: 0.03, blue: 0.07, alpha: 0.80).cgColor,
+        ]
+        base.startPoint = CGPoint(x: 0.5, y: 1)
+        base.endPoint = CGPoint(x: 0.5, y: 0)
+
+        for (bloom, color) in [(indigo, NSColor(calibratedRed: 0.36, green: 0.36, blue: 0.95, alpha: 0.55)),
+                               (teal, NSColor(calibratedRed: 0.12, green: 0.60, blue: 0.70, alpha: 0.42))] {
+            bloom.type = .radial
+            bloom.colors = [color.cgColor, color.withAlphaComponent(0).cgColor]
+            bloom.locations = [0, 1]
+            bloom.startPoint = CGPoint(x: 0.5, y: 0.5)
+            bloom.endPoint = CGPoint(x: 1, y: 1)
+        }
+        layer?.addSublayer(base)
+        layer?.addSublayer(indigo)
+        layer?.addSublayer(teal)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Storyboards are not used") }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        base.frame = bounds
+        let w = bounds.width, h = bounds.height
+        indigo.frame = CGRect(x: -0.35 * w, y: h - 0.55 * h, width: 1.1 * w, height: 1.1 * w)
+        teal.frame = CGRect(x: 0.35 * w, y: -0.55 * w, width: 1.1 * w, height: 1.1 * w)
+        CATransaction.commit()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsLayout = true
+    }
+}
+
 /// Section container. On macOS 26 it is real Liquid Glass (NSGlassEffectView); on older systems a
 /// translucent rounded panel that reads the same way.
 final class GlassCard: NSView {
@@ -303,28 +444,36 @@ final class GlassCard: NSView {
         heading.attributedStringValue = NSAttributedString(string: title.uppercased(), attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.secondaryLabelColor,
-            .kern: 0.8,
+            .kern: 0.9,
         ])
 
-        let inner = NSStackView(views: [heading, content])
+        let inner = NSStackView()
         inner.orientation = .vertical
-        inner.alignment = .leading
-        inner.spacing = 12
-        inner.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 16, right: 18)
+        inner.alignment = .width
+        inner.spacing = 6
+        inner.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 10, right: 18)
         inner.translatesAutoresizingMaskIntoConstraints = false
+        for view in [heading, content] {
+            inner.addArrangedSubview(view)
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: inner.leadingAnchor, constant: inner.edgeInsets.left),
+                view.trailingAnchor.constraint(equalTo: inner.trailingAnchor, constant: -inner.edgeInsets.right),
+            ])
+        }
 
         let surface: NSView
         if #available(macOS 26, *) {
             let glass = NSGlassEffectView()
-            glass.cornerRadius = 18
+            glass.cornerRadius = 20
             glass.style = .regular
-            glass.tintColor = tint ?? NSColor(calibratedWhite: 0, alpha: 0.35)
+            glass.tintColor = tint
             glass.contentView = inner
             surface = glass
         } else {
             let panel = NSView()
             panel.wantsLayer = true
-            panel.layer?.cornerRadius = 18
+            panel.layer?.cornerRadius = 20
             panel.layer?.cornerCurve = .continuous
             panel.layer?.backgroundColor = (tint ?? NSColor.white.withAlphaComponent(0.07)).cgColor
             panel.layer?.borderWidth = 1

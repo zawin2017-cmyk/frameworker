@@ -87,8 +87,32 @@ import Testing
         #expect(Layout.screenIndex(containing: .zero, in: []) == nil)
     }
 
+    @Test func repeatedFirstThirdWalksRightAndWraps() {
+        func next(from current: WindowAction, pressing action: WindowAction) -> WindowAction {
+            Layout.nextStep(for: action, window: frame(current), visible: visible, customSize: customSize)
+        }
+        #expect(Layout.nextStep(for: .firstThird, window: window, visible: visible, customSize: customSize) == .firstThird)
+        #expect(next(from: .firstThird, pressing: .firstThird) == .centerThird)
+        #expect(next(from: .centerThird, pressing: .firstThird) == .lastThird)
+        #expect(next(from: .lastThird, pressing: .firstThird) == .firstThird)
+        #expect(next(from: .lastThird, pressing: .lastThird) == .centerThird)
+        #expect(next(from: .centerThird, pressing: .lastThird) == .firstThird)
+        #expect(next(from: .firstTwoThirds, pressing: .firstTwoThirds) == .lastTwoThirds)
+        #expect(next(from: .leftHalf, pressing: .leftHalf) == .firstTwoThirds)
+        #expect(next(from: .firstTwoThirds, pressing: .leftHalf) == .firstThird)
+        #expect(next(from: .firstThird, pressing: .leftHalf) == .leftHalf)
+        #expect(next(from: .topLeft, pressing: .topLeft) == .topLeft)
+        #expect(next(from: .maximize, pressing: .maximize) == .maximize)
+    }
+
+    @Test func matchingToleratesTinyDifferences() {
+        let a = CGRect(x: 0, y: 25, width: 480, height: 875)
+        #expect(Layout.matches(a, a.offsetBy(dx: 1, dy: -1)))
+        #expect(!Layout.matches(a, a.offsetBy(dx: 3, dy: 0)))
+    }
+
     @Test func actionsThatNeedOtherScreensHaveNoStaticFrame() {
-        for action in [WindowAction.restore, .nextDisplay, .previousDisplay] {
+        for action in [WindowAction.restore, .nextDisplay, .previousDisplay, .openSettings] {
             #expect(Layout.frame(for: action, window: window, visible: visible, customSize: customSize) == nil)
         }
     }

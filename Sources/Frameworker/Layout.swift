@@ -57,9 +57,41 @@ enum Layout {
             return resized(window, by: -resizeStep, in: v)
         case .larger:
             return resized(window, by: resizeStep, in: v)
-        case .restore, .nextDisplay, .previousDisplay:
+        case .restore, .nextDisplay, .previousDisplay, .openSettings:
             return nil
         }
+    }
+
+    /// Repeated presses of the same shortcut walk through these shapes. The first third moves right, the
+    /// last third moves left, a half shrinks to two thirds and then one third on its own side, and two
+    /// thirds jumps to the other side. Anything else simply repeats.
+    static func cycle(for action: WindowAction) -> [WindowAction] {
+        switch action {
+        case .firstThird: return [.firstThird, .centerThird, .lastThird]
+        case .lastThird: return [.lastThird, .centerThird, .firstThird]
+        case .firstTwoThirds: return [.firstTwoThirds, .lastTwoThirds]
+        case .lastTwoThirds: return [.lastTwoThirds, .firstTwoThirds]
+        case .leftHalf: return [.leftHalf, .firstTwoThirds, .firstThird]
+        case .rightHalf: return [.rightHalf, .lastTwoThirds, .lastThird]
+        default: return [action]
+        }
+    }
+
+    /// The shape to apply now: the action itself, or the next one in its cycle when the window already
+    /// sits where the action would put it. Stateless on purpose, so it survives windows being moved by hand.
+    static func nextStep(for action: WindowAction, window: CGRect, visible: CGRect, customSize: CGSize) -> WindowAction {
+        let steps = cycle(for: action)
+        guard steps.count > 1 else { return action }
+        for (index, step) in steps.enumerated() {
+            guard let target = frame(for: step, window: window, visible: visible, customSize: customSize) else { continue }
+            if matches(window, target) { return steps[(index + 1) % steps.count] }
+        }
+        return action
+    }
+
+    static func matches(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 2) -> Bool {
+        abs(lhs.minX - rhs.minX) <= tolerance && abs(lhs.minY - rhs.minY) <= tolerance
+            && abs(lhs.width - rhs.width) <= tolerance && abs(lhs.height - rhs.height) <= tolerance
     }
 
     static func centered(_ size: CGSize, in v: CGRect) -> CGRect {

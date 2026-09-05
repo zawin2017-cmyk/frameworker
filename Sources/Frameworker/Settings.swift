@@ -41,16 +41,20 @@ final class Settings {
     func shortcut(for action: WindowAction) -> Shortcut? { shortcuts[action] }
 
     /// Assigns `shortcut` to `action`. Any other action holding the same combination is unbound, because
-    /// Carbon would refuse the second registration anyway.
-    func setShortcut(_ shortcut: Shortcut?, for action: WindowAction) {
+    /// Carbon would refuse the second registration anyway. Returns the actions that lost their shortcut.
+    @discardableResult
+    func setShortcut(_ shortcut: Shortcut?, for action: WindowAction) -> [WindowAction] {
         var all = shortcuts
+        var displaced: [WindowAction] = []
         if let shortcut {
             for (other, existing) in all where existing == shortcut && other != action {
                 all[other] = nil
+                displaced.append(other)
             }
         }
         all[action] = shortcut
         save(all)
+        return displaced
     }
 
     func resetShortcuts() {
